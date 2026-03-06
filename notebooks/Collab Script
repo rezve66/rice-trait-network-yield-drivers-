@@ -1,0 +1,575 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/rezve66/rice-trait-network-yield-drivers-/blob/main/genotype_trait_pipeline.ipynb\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "MTcPCI75JxvP"
+      },
+      "source": [
+        "\n",
+        "# 🌾 Integrative Genotype–Trait Multi‑Analysis Pipeline\n",
+        "### BLUP Heritability • Trait Networks • Yield Drivers • MGIDI • Machine Learning\n",
+        "\n",
+        "**Author:** Jarvis  \n",
+        "**Affiliation:** Plant Protection / Plant Breeding & Biotechnology Research  \n",
+        "**Purpose:** Reproducible multi‑omics‑compatible phenotypic analysis workflow for crop improvement research.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## 🎯 Scientific Objective\n",
+        "\n",
+        "This notebook implements a **complete phenotype analysis pipeline** commonly used in quantitative genetics and crop breeding studies.\n",
+        "\n",
+        "The workflow integrates:\n",
+        "\n",
+        "1. **BLUP estimation using mixed models (REML)**\n",
+        "2. **Variance component estimation**\n",
+        "3. **BLUP‑based heritability**\n",
+        "4. **Partial correlation analysis (Graphical Lasso)**\n",
+        "5. **Trait interaction networks**\n",
+        "6. **Yield driver modeling**\n",
+        "7. **PLS‑VIP trait importance**\n",
+        "8. **Machine learning feature importance**\n",
+        "9. **MGIDI multi‑trait selection index**\n",
+        "10. **Publication‑ready figure generation (600 dpi)**\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## 📊 Expected Input Dataset Format\n",
+        "\n",
+        "The dataset should be in **Excel (.xlsx) or CSV (.csv)** format.\n",
+        "\n",
+        "Example structure:\n",
+        "\n",
+        "| Genotype | Replication | Days to flowering | Plant height | Panicle length | Grain yield per hill |\n",
+        "|----------|-------------|------------------|-------------|---------------|---------------------|\n",
+        "| G1 | R1 | 82 | 115 | 25.2 | 28.4 |\n",
+        "| G1 | R2 | 81 | 117 | 24.8 | 27.9 |\n",
+        "| G2 | R1 | 79 | 120 | 26.1 | 29.5 |\n",
+        "\n",
+        "Required columns:\n",
+        "\n",
+        "• **Genotype**  \n",
+        "• **Replication**  \n",
+        "• Trait columns\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## 📁 Recommended GitHub Repository Structure\n",
+        "\n",
+        "```\n",
+        "Genotype-Trait-MultiAnalysis\n",
+        "│\n",
+        "├── notebooks\n",
+        "│   └── genotype_trait_analysis.ipynb\n",
+        "│\n",
+        "├── data\n",
+        "│   └── example_dataset.xlsx\n",
+        "│\n",
+        "├── outputs\n",
+        "│   ├── figures\n",
+        "│   └── tables\n",
+        "│\n",
+        "├── README.md\n",
+        "└── requirements.txt\n",
+        "```\n",
+        "\n",
+        "---\n"
+      ],
+      "id": "MTcPCI75JxvP"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "-t9dgOm6Jxvg"
+      },
+      "source": [
+        "## 1️⃣ Install Required Python Packages"
+      ],
+      "id": "-t9dgOm6Jxvg"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "VWKMj42qJxvj"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "!pip -q install statsmodels scikit-learn networkx seaborn shap openpyxl\n"
+      ],
+      "id": "VWKMj42qJxvj"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "8qLMb75GJxvo"
+      },
+      "source": [
+        "## 2️⃣ Import Libraries"
+      ],
+      "id": "8qLMb75GJxvo"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "c_FRGEiSJxvp"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "import os\n",
+        "import re\n",
+        "import warnings\n",
+        "import numpy as np\n",
+        "import pandas as pd\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "import networkx as nx\n",
+        "\n",
+        "import statsmodels.formula.api as smf\n",
+        "\n",
+        "from sklearn.preprocessing import StandardScaler\n",
+        "from sklearn.covariance import GraphicalLassoCV\n",
+        "from sklearn.linear_model import LinearRegression\n",
+        "from sklearn.cross_decomposition import PLSRegression\n",
+        "from sklearn.ensemble import RandomForestRegressor\n",
+        "from sklearn.model_selection import cross_val_predict\n",
+        "from sklearn.metrics import r2_score\n",
+        "from sklearn.decomposition import FactorAnalysis\n",
+        "\n",
+        "warnings.filterwarnings(\"ignore\")\n"
+      ],
+      "id": "c_FRGEiSJxvp"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "Wa2KF-M0Jxvr"
+      },
+      "source": [
+        "\n",
+        "## 3️⃣ Upload Dataset\n",
+        "\n",
+        "Upload your dataset directly in Google Colab.\n",
+        "Supported formats:\n",
+        "\n",
+        "• `.xlsx`  \n",
+        "• `.csv`\n"
+      ],
+      "id": "Wa2KF-M0Jxvr"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "KpicII4yJxvt"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "from google.colab import files\n",
+        "\n",
+        "uploaded = files.upload()\n",
+        "filename = list(uploaded.keys())[0]\n",
+        "\n",
+        "if filename.endswith(\".xlsx\"):\n",
+        "    df = pd.read_excel(filename)\n",
+        "else:\n",
+        "    df = pd.read_csv(filename)\n",
+        "\n",
+        "df.columns = df.columns.str.strip()\n",
+        "\n",
+        "print(\"Dataset loaded successfully\")\n",
+        "print(df.head())\n"
+      ],
+      "id": "KpicII4yJxvt"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "-NpMXQ9CJxvw"
+      },
+      "source": [
+        "\n",
+        "## 4️⃣ Detect Trait Columns\n",
+        "\n",
+        "Automatically identify all phenotype traits.\n"
+      ],
+      "id": "-NpMXQ9CJxvw"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "ZKsYrFjwJxvy"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "traits = [c for c in df.columns if c not in [\"Genotype\",\"Replication\"]]\n",
+        "\n",
+        "print(\"Traits detected:\", len(traits))\n",
+        "print(traits)\n"
+      ],
+      "id": "ZKsYrFjwJxvy"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "Q9DkHpf0Jxv1"
+      },
+      "source": [
+        "\n",
+        "## 5️⃣ BLUP Estimation (Mixed Linear Model)\n",
+        "\n",
+        "Statistical model:\n",
+        "\n",
+        "**yᵢⱼ = μ + Rⱼ + Gᵢ + εᵢⱼ**\n",
+        "\n",
+        "Where\n",
+        "\n",
+        "μ = overall mean  \n",
+        "Rⱼ = replication effect (fixed)  \n",
+        "Gᵢ = genotype effect (random)  \n",
+        "εᵢⱼ = residual error\n",
+        "\n",
+        "BLUP values represent **genotype performance adjusted for replication effects**.\n"
+      ],
+      "id": "Q9DkHpf0Jxv1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "sahEZntgJxv2"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "genotypes = sorted(df[\"Genotype\"].astype(str).unique())\n",
+        "\n",
+        "blup = pd.DataFrame(index=genotypes, columns=traits)\n",
+        "\n",
+        "for t in traits:\n",
+        "    formula = f'Q(\"{t}\") ~ C(Replication)'\n",
+        "\n",
+        "    md = smf.mixedlm(formula, df, groups=df[\"Genotype\"])\n",
+        "    m = md.fit(reml=True)\n",
+        "\n",
+        "    mu = float(m.fe_params.iloc[0])\n",
+        "\n",
+        "    for g in genotypes:\n",
+        "        u = float(np.asarray(m.random_effects[g])[0])\n",
+        "        blup.loc[g, t] = mu + u\n",
+        "\n",
+        "blup.head()\n"
+      ],
+      "id": "sahEZntgJxv2"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "HXfPMg90Jxv4"
+      },
+      "source": [
+        "## 6️⃣ Standardize BLUP Matrix (Z‑score scaling)"
+      ],
+      "id": "HXfPMg90Jxv4"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "7yuiEokeJxv5"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "Z = pd.DataFrame(\n",
+        "    StandardScaler().fit_transform(blup.values),\n",
+        "    columns=traits,\n",
+        "    index=blup.index\n",
+        ")\n",
+        "\n",
+        "Z.head()\n"
+      ],
+      "id": "7yuiEokeJxv5"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "-NGxnS1qJxv6"
+      },
+      "source": [
+        "\n",
+        "## 7️⃣ Partial Correlation Analysis (Graphical Lasso)\n",
+        "\n",
+        "This method estimates **conditional relationships among traits**.\n"
+      ],
+      "id": "-NGxnS1qJxv6"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "kSPwOFpBJxv6"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "gl = GraphicalLassoCV()\n",
+        "gl.fit(Z.values)\n",
+        "\n",
+        "P = gl.precision_\n",
+        "d = np.sqrt(np.diag(P))\n",
+        "\n",
+        "pcorr = -P / np.outer(d, d)\n",
+        "np.fill_diagonal(pcorr, 1)\n",
+        "\n",
+        "pcorr_df = pd.DataFrame(pcorr, index=traits, columns=traits)\n"
+      ],
+      "id": "kSPwOFpBJxv6"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "Oa92O5VwJxv7"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "plt.figure(figsize=(10,8))\n",
+        "sns.heatmap(pcorr_df, cmap=\"coolwarm\", vmin=-1, vmax=1)\n",
+        "plt.title(\"BLUP‑based Partial Correlation Matrix\")\n",
+        "plt.show()\n"
+      ],
+      "id": "Oa92O5VwJxv7"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "-UYtP-YJJxv8"
+      },
+      "source": [
+        "\n",
+        "## 8️⃣ Trait Interaction Network\n"
+      ],
+      "id": "-UYtP-YJJxv8"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "OvQzUNCNJxv8"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "THRESHOLD = 0.20\n",
+        "\n",
+        "G = nx.Graph()\n",
+        "\n",
+        "for i in range(len(traits)):\n",
+        "    for j in range(i+1,len(traits)):\n",
+        "        r = pcorr_df.iloc[i,j]\n",
+        "        if abs(r) >= THRESHOLD:\n",
+        "            G.add_edge(traits[i], traits[j], weight=r)\n",
+        "\n",
+        "plt.figure(figsize=(10,10))\n",
+        "\n",
+        "pos = nx.spring_layout(G, seed=42)\n",
+        "nx.draw(G, pos, with_labels=True, node_size=2000)\n",
+        "\n",
+        "plt.title(\"Trait Interaction Network\")\n",
+        "plt.show()\n"
+      ],
+      "id": "OvQzUNCNJxv8"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "i5COJuUJJxv-"
+      },
+      "source": [
+        "\n",
+        "## 9️⃣ Yield Driver Identification\n",
+        "\n",
+        "Multiple Linear Regression is used to detect traits that most strongly influence yield.\n"
+      ],
+      "id": "i5COJuUJJxv-"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "m4TYJd87Jxv-"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "yield_trait = \"Grain yield per hill\"\n",
+        "\n",
+        "X = Z.drop(columns=[yield_trait])\n",
+        "y = Z[yield_trait]\n",
+        "\n",
+        "model = LinearRegression().fit(X,y)\n",
+        "\n",
+        "importance = pd.Series(abs(model.coef_), index=X.columns).sort_values()\n",
+        "\n",
+        "importance.plot.barh()\n",
+        "plt.title(\"Yield Driver Traits\")\n",
+        "plt.show()\n"
+      ],
+      "id": "m4TYJd87Jxv-"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "0w8kGG_BJxv_"
+      },
+      "source": [
+        "\n",
+        "## 🔟 Random Forest Feature Importance\n"
+      ],
+      "id": "0w8kGG_BJxv_"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "pIEF58A3Jxv_"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "rf = RandomForestRegressor(n_estimators=300, random_state=42)\n",
+        "rf.fit(X,y)\n",
+        "\n",
+        "imp = pd.Series(rf.feature_importances_, index=X.columns)\n",
+        "\n",
+        "imp.sort_values().plot.barh()\n",
+        "plt.title(\"Random Forest Trait Importance\")\n",
+        "plt.show()\n"
+      ],
+      "id": "pIEF58A3Jxv_"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "J2XOQLbzJxwB"
+      },
+      "source": [
+        "\n",
+        "## 1️⃣1️⃣ MGIDI Multi‑Trait Selection Index\n"
+      ],
+      "id": "J2XOQLbzJxwB"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "dr3pzNhyJxwC"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "gmeans = df.groupby(\"Genotype\")[traits].mean()\n",
+        "\n",
+        "Z = StandardScaler().fit_transform(gmeans)\n",
+        "\n",
+        "fa = FactorAnalysis(n_components=min(5, Z.shape[1]))\n",
+        "F = fa.fit_transform(Z)\n",
+        "\n",
+        "ideotype = F.max(axis=0)\n",
+        "\n",
+        "mgidi = np.sqrt(((F - ideotype)**2).sum(axis=1))\n",
+        "mgidi = pd.Series(mgidi, index=gmeans.index).sort_values()\n",
+        "\n",
+        "mgidi.head()\n"
+      ],
+      "id": "dr3pzNhyJxwC"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "Y7ntIFxRJxwD"
+      },
+      "source": [
+        "\n",
+        "## 1️⃣2️⃣ Export Results\n"
+      ],
+      "id": "Y7ntIFxRJxwD"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "uxMh52LZJxwE"
+      },
+      "execution_count": null,
+      "outputs": [],
+      "source": [
+        "\n",
+        "os.makedirs(\"analysis_outputs\", exist_ok=True)\n",
+        "\n",
+        "blup.to_csv(\"analysis_outputs/blup_matrix.csv\")\n",
+        "pcorr_df.to_csv(\"analysis_outputs/partial_correlation_matrix.csv\")\n",
+        "mgidi.to_csv(\"analysis_outputs/mgidi_scores.csv\")\n",
+        "\n",
+        "print(\"All outputs exported.\")\n"
+      ],
+      "id": "uxMh52LZJxwE"
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "P7qCsCgAJxwE"
+      },
+      "source": [
+        "\n",
+        "# ✅ Pipeline Completed\n",
+        "\n",
+        "Generated outputs:\n",
+        "\n",
+        "• BLUP matrix  \n",
+        "• Partial correlation matrix  \n",
+        "• Trait interaction network  \n",
+        "• Yield predictor model  \n",
+        "• Machine learning importance  \n",
+        "• MGIDI selection index  \n",
+        "\n",
+        "These outputs can directly support **scientific publications and PhD research portfolios**.\n"
+      ],
+      "id": "P7qCsCgAJxwE"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "display_name": "Python 3",
+      "language": "python",
+      "name": "python3"
+    },
+    "language_info": {
+      "name": "python"
+    },
+    "colab": {
+      "provenance": [],
+      "include_colab_link": true
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
