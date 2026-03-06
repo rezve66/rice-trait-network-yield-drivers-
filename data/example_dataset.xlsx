@@ -1,0 +1,5 @@
+| Genotype | Replication | Days to flowering | Plant height | Panicle length | Grain yield per hill |
+| -------- | ----------- | ----------------- | ------------ | -------------- | -------------------- |
+| Parent   | 1           | 85                | 110          | 24             | 28                   |
+| Mutant1  | 1           | 90                | 120          | 26             | 32                   |
+| Mutant2  | 1           | 92                | 118          | 25             | 30                   |
