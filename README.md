@@ -249,7 +249,7 @@ All figures are exported at **high resolution suitable for journal submission**.
 
 # 🧑‍🔬 Author
 
-**Jarvis**
+**Md Rezve**
 
 PhD Applicant — Plant Breeding & Quantitative Genetics
 
