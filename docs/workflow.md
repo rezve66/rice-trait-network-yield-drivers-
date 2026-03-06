@@ -1,40 +1,34 @@
-Field Experiment Dataset
-        │
-        ▼
-Data Pre-processing
-        │
-        ▼
-Genetic Parameter Estimation
-        │
-        ├─ BLUP Estimation
-        ├─ Variance Components
-        └─ Heritability
-        │
-        ▼
-Trait Relationship Analysis
-        │
-        ├─ Phenotypic Correlation Matrix
-        ├─ Graphical Lasso Partial Correlation
-        └─ Trait Interaction Network
-        │
-        ▼
-Yield Driver Identification
-        │
-        ├─ Multiple Linear Regression
-        ├─ Partial Least Squares
-        ├─ Random Forest
-        └─ SHAP Feature Importance
-        │
-        ▼
-Multi-Trait Selection
-        │
-        └─ MGIDI Index
-        │
-        ▼
-Advanced Visualization
-        │
-        ├─ Scatter regression panels
-        ├─ Trait heatmaps
-        ├─ Chord diagrams
-        ├─ Response surface analysis
-        └─ PCA biplots
+# Workflow Overview
+
+This repository implements a comprehensive genotype–trait analysis workflow.
+
+## Pipeline Overview
+
+Field Data
+   ↓
+Data Cleaning
+   ↓
+BLUP Estimation
+   ↓
+Variance Components & Heritability
+   ↓
+Trait Correlation Analysis
+   ↓
+Graphical Lasso Network
+   ↓
+Machine Learning Models
+   ↓
+Multi-Trait Selection (MGIDI)
+   ↓
+Advanced Visualizations
+   ↓
+Publication Figures
+
+## Modules
+
+1. BLUP estimation
+2. Trait interaction networks
+3. Machine learning trait importance
+4. Multi-trait selection
+5. PCA & correlation analysis
+6. Visualization modules
